@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import torch
 
 
 class VowelNN:
@@ -33,7 +32,7 @@ class VowelNN:
         y = []
 
         vowels = {"ae": 0, "ah": 1, "aw": 2, "eh": 3, 
-                  "er": 4, "ey": 5, "ih": 6, "iy": 7, 
+                  "er": 4, "ey": 5, "ei": 5, "ih": 6, "iy": 7, 
                   "oa": 8, "oo": 9, "uh": 10, "uw": 11}
 
         with open(path, 'r') as file:
@@ -77,7 +76,7 @@ class VowelNN:
         x = (x - self.feature_mean) / self.feature_std
         
         #Shuffle data, prevent learning bias
-        index = np.random.premutation(x.shape[0])
+        index = np.random.permutation(x.shape[0])
         x = x[index]
         y = self.y_train[index]
 
@@ -90,6 +89,9 @@ class VowelNN:
 
 
     def train_model(self, epochs = 100):
+        #Standardize data
+        self.process_data()
+
         self.loss_history = []
         self.accuracy_history = []
         
@@ -171,15 +173,23 @@ class VowelNN:
 
 
 
-    def softmax(self, z):
-        pass
+    def softmax(self, scores):
+        scores_shifted = scores - np.max(scores, axis = 1, keepdims = True)
+        exp_scores = np.exp(scores_shifted)
+        
+        return exp_scores / np.sum(exp_scores, axis = 1, keepdims = True)
 
 
 
 
 
 def main():
-    pass
+    model = VowelNN()
+    model.train_model()
+
+    print("Training complete")
+    print("Loss: ", model.loss_history[-1])
+    print("Accuracy: ", model.accuracy_history[-1])
 
 if __name__ == "__main__":
     main()
