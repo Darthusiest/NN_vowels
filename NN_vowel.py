@@ -7,7 +7,7 @@ class VowelNN:
         self.x_train = None
         self.y_train = None
 
-        self.LR = 0.01 # 10% learning rate
+        self.LR = 0.1 # 10% learning rate
 
         self.input_size = 3
         self.hidden_size = 32
@@ -133,6 +133,33 @@ class VowelNN:
         plt.plot(self.accuracy_history, label = "Accuracy")
         plt.legend()
         plt.show()
+
+        self.print_vowel_accuracy(x, y)
+
+
+    def print_vowel_accuracy(self, x, y):
+        """Print per-vowel correct/total accuracy mapping."""
+        # Forward pass to get predictions
+        weight_sum_1 = np.dot(x, self.W1) + self.B1
+        output_H1_layer = np.maximum(0, weight_sum_1)
+        scores = np.dot(output_H1_layer, self.W2) + self.B2
+        probabilities = self.softmax(scores)
+        predictions = np.argmax(probabilities, axis=1)
+
+        vowel_names = ["ae", "ah", "aw", "eh", "er", "ey", "ih", "iy", "oa", "oo", "uh", "uw"]
+
+        print("\n--- Per-vowel accuracy ---")
+        total_correct = 0
+        total_count = 0
+        for i, name in enumerate(vowel_names):
+            mask = y == i
+            count = np.sum(mask)
+            correct = np.sum((predictions == y) & mask)
+            total_correct += correct
+            total_count += count
+            if count > 0:
+                print(f"  {name}: {correct}/{count} correct")
+        print(f"\n  Total: {total_correct}/{total_count} correct")
 
 
 
