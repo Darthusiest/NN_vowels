@@ -7,7 +7,7 @@ class VowelNN:
         self.x_train = None
         self.y_train = None
 
-        self.LR = 0.1 # 10% learning rate
+        self.LR = 0.15 # 10% learning rate
 
         self.input_size = 3
         self.hidden_size = 64
@@ -21,7 +21,8 @@ class VowelNN:
         self.B2 = np.zeros(self.output_size)
 
         path = "bigdata.dat.txt"
-        self.x_train, self.y_train = self.load_data(path)
+        x_all, y_all = self.load_data(path)
+        self.x_train, self.y_train, self.x_test, self.y_test = self.split_data(x_all, y_all, test_frac=0.2, seed=42)
 
 
 
@@ -61,28 +62,45 @@ class VowelNN:
         return np.array(x), np.array(y)
 
 
+    def split_data(self, x, y, test_frac=0.2, seed=42):
+        """Stratified 80/20 train/test split so each vowel is represented in both sets."""
+        np.random.seed(seed)
+        train_idx, test_idx = [], []
+        for class_id in range(self.output_size):
+            mask = y == class_id
+            indices = np.where(mask)[0]
+            np.random.shuffle(indices)
+            n_test = max(1, int(len(indices) * test_frac))
+            n_train = len(indices) - n_test
+            train_idx.extend(indices[:n_train])
+            test_idx.extend(indices[n_train:])
+        train_idx = np.array(train_idx)
+        test_idx = np.array(test_idx)
+        np.random.shuffle(train_idx)
+        np.random.shuffle(test_idx)
+        return x[train_idx], y[train_idx], x[test_idx], y[test_idx]
+
 
 
 
     def process_data(self):
-        #Standardize data
-        x = self.x_train.astype(float)
+        """Standardize train and test data using train statistics only (no data leakage)."""
+        x_train = self.x_train.astype(float)
+        x_test = self.x_test.astype(float)
 
-        self.feature_mean = x.mean(axis = 0)
-        self.feature_std = x.std(axis = 0)
-
-        #Avoid division by zero
+        # Compute mean/std from TRAIN only
+        self.feature_mean = x_train.mean(axis=0)
+        self.feature_std = x_train.std(axis=0)
         self.feature_std[self.feature_std == 0] = 1.0
-        x = (x - self.feature_mean) / self.feature_std
-        
-        #Shuffle data, prevent learning bias
-        index = np.random.permutation(x.shape[0])
-        x = x[index]
-        y = self.y_train[index]
 
-        #Update data
-        self.x_train = x 
-        self.y_train = y
+        # Standardize both sets with train statistics
+        self.x_train = (x_train - self.feature_mean) / self.feature_std
+        self.x_test = (x_test - self.feature_mean) / self.feature_std
+
+        # Shuffle train only
+        index = np.random.permutation(self.x_train.shape[0])
+        self.x_train = self.x_train[index]
+        self.y_train = self.y_train[index]
 
 
 
@@ -134,7 +152,7 @@ class VowelNN:
         plt.legend()
         plt.show()
 
-        self.print_vowel_accuracy(x, y)
+        self.print_vowel_accuracy(self.x_test, self.y_test, title_suffix="(Test set — unseen data)")
 
 
 
@@ -185,7 +203,7 @@ class VowelNN:
 
 
 
-    def print_vowel_accuracy(self, x, y):
+    def print_vowel_accuracy(self, x, y, title_suffix=""):
         """Display per-vowel correct/total accuracy in a figure."""
         # Forward pass to get predictions
         weight_sum_1 = np.dot(x, self.W1) + self.B1
@@ -218,7 +236,10 @@ class VowelNN:
         ax.set_xticks(x_pos)
         ax.set_xticklabels(labels)
         ax.set_ylabel("Accuracy")
-        ax.set_title(f"Per-vowel accuracy — Total: {total_correct}/{total_count} correct")
+        title = f"Per-vowel accuracy — Total: {total_correct}/{total_count} correct"
+        if title_suffix:
+            title += f" {title_suffix}"
+        ax.set_title(title)
         ax.set_ylim(0, 1.05)
         ax.axhline(y=1, color='gray', linestyle='--', alpha=0.5)
         plt.tight_layout()
@@ -231,8 +252,13 @@ def main():
     model.train_model()
 
     print("Training complete")
-    print("Loss: ", model.loss_history[-1])
-    print("Accuracy: ", model.accuracy_history[-1])
+    print("Train — Loss:", model.loss_history[-1], "| Accuracy:", model.accuracy_history[-1])
+    # Test accuracy (generalization)
+    preds = np.argmax(model.softmax(
+        np.maximum(0, model.x_test @ model.W1 + model.B1) @ model.W2 + model.B2
+    ), axis=1)
+    test_acc = np.mean(preds == model.y_test)
+    print("Test  — Accuracy:", f"{test_acc:.2%}", "(unseen data)")
 
 if __name__ == "__main__":
     main()
