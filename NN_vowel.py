@@ -26,6 +26,8 @@ class VowelNN:
 
 
 
+
+
     def load_data(self, path: str):
         x = []
         y = []
@@ -59,8 +61,32 @@ class VowelNN:
 
         return np.array(x), np.array(y)
 
+
+
+
+
     def process_data(self):
-        pass
+        #Standardize data
+        x = self.x_train.astype(float)
+
+        self.feature_mean = x.mean(axis = 0)
+        self.feature_std = x.std(axis = 0)
+
+        #Avoid division by zero
+        self.feature_std[self.feature_std == 0] = 1.0
+        x = (x - self.feature_mean) / self.feature_std
+        
+        #Shuffle data, prevent learning bias
+        index = np.random.premutation(x.shape[0])
+        x = x[index]
+        y = self.y_train[index]
+
+        #Update data
+        self.x_train = x 
+        self.y_train = y
+
+
+
 
 
     def train_model(self, epochs = 100):
@@ -93,10 +119,8 @@ class VowelNN:
             predictions = np.argmax(probabilities, axis = 1) #pick highest prob vowel per row
             accuracy = np.mean(predictions == y) #T/F accuracy per row
 
-            #backpropagation
-            
-
-            #update weights and biases
+            #Backpropagation / update weights and biases
+            self.back_propagation(x, y, probabilities, weight_sum_1, output_H1_layer)
 
             self.loss_history.append(loss)
             self.accuracy_history.append(accuracy)
@@ -108,6 +132,11 @@ class VowelNN:
         plt.legend()
         plt.show()
 
+
+
+
+
+    #Backpropagation
     def back_propagation(self, x, y, probabilities, weight_sum_1, output_H1_layer):
         N = x.shape[0]
 
@@ -140,8 +169,11 @@ class VowelNN:
 
 
 
+
+
     def softmax(self, z):
         pass
+
 
 
 
