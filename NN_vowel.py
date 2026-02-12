@@ -10,15 +10,20 @@ class VowelNN:
         self.LR = 0.15 # 10% learning rate
 
         self.input_size = 3
-        self.hidden_size = 64
+        self.hidden_size = 128
+        self.hidden_size_2 = 64
         self.output_size = 12
 
 
-        self.W1 = np.random.randn(self.input_size, self.hidden_size) * 0.01
+        self.W1 = np.random.randn(self.input_size, self.hidden_size) * np.sqrt(2 / self.input_size)
         self.B1 = np.zeros(self.hidden_size)
 
-        self.W2 = np.random.randn(self.hidden_size, self.output_size) * 0.01
-        self.B2 = np.zeros(self.output_size)
+        self.W2 = np.random.randn(self.hidden_size, self.hidden_size_2) * np.sqrt(2 / self.hidden_size)
+        self.B2 = np.zeros(self.hidden_size_2)
+
+        self.W3 = np.random.randn(self.hidden_size_2, self.output_size) * np.sqrt(2 / self.hidden_size_2)
+        self.B3 = np.zeros(self.output_size)
+
 
         path = "bigdata.dat.txt"
         x_all, y_all = self.load_data(path)
@@ -62,10 +67,13 @@ class VowelNN:
         return np.array(x), np.array(y)
 
 
+
+
+    #Stratified 80/20 train/test split so each vowel is represented in both sets.
     def split_data(self, x, y, test_frac=0.2, seed=42):
-        """Stratified 80/20 train/test split so each vowel is represented in both sets."""
         np.random.seed(seed)
         train_idx, test_idx = [], []
+
         for class_id in range(self.output_size):
             mask = y == class_id
             indices = np.where(mask)[0]
@@ -88,16 +96,16 @@ class VowelNN:
         x_train = self.x_train.astype(float)
         x_test = self.x_test.astype(float)
 
-        # Compute mean/std from TRAIN only
+        # Compute mean and std from TRAIN only
         self.feature_mean = x_train.mean(axis=0)
         self.feature_std = x_train.std(axis=0)
         self.feature_std[self.feature_std == 0] = 1.0
 
-        # Standardize both sets with train statistics
+        # Standardize both sets
         self.x_train = (x_train - self.feature_mean) / self.feature_std
         self.x_test = (x_test - self.feature_mean) / self.feature_std
 
-        # Shuffle train only
+        # Shuffle data so no bias in learning
         index = np.random.permutation(self.x_train.shape[0])
         self.x_train = self.x_train[index]
         self.y_train = self.y_train[index]
@@ -115,16 +123,20 @@ class VowelNN:
         
         x = self.x_train
         y = self.y_train
-        for epoch in range(epochs): #run through the data_set 100 times 
+        for epoch in range(epochs): #run through the data_set 1000 times 
 
             #Forward Pass
             #Input --> Hidden Layer 1
             weight_sum_1 = np.dot(x, self.W1) + self.B1
             output_H1_layer = np.maximum(0, weight_sum_1)
 
-            #Hidden --> Output
-            scores = np.dot(output_H1_layer, self.W2) + self.B2
+            #Hidden Layer 2
+            weight_sum_2 = np.dot(output_H1_layer, self.W2) + self.B2
+            output_H2_layer = np.maximum(0, weight_sum_2)
 
+            #Hidden --> Output
+            scores = np.dot(output_H2_layer, self.W3) + self.B3
+            
             probabilities = self.softmax(scores)
             
             
@@ -140,7 +152,7 @@ class VowelNN:
             accuracy = np.mean(predictions == y) #T/F accuracy per row
 
             #Backpropagation / update weights and biases
-            self.back_propagation(x, y, probabilities, weight_sum_1, output_H1_layer)
+            self.back_propagation(x, y, probabilities, weight_sum_1, output_H1_layer, weight_sum_2, output_H2_layer)
 
             self.loss_history.append(loss)
             self.accuracy_history.append(accuracy)
@@ -158,36 +170,42 @@ class VowelNN:
 
 
 
-    #Backpropagation
-    def back_propagation(self, x, y, probabilities, weight_sum_1, output_H1_layer):
+    #Backpropagation (2 hidden layers)
+    def back_propagation(self, x, y, probabilities, weight_sum_1, output_H1_layer, weight_sum_2, output_H2_layer):
         N = x.shape[0]
 
-        #dScores = dL/dScores 
         dScores = probabilities.copy()
         dScores[np.arange(N), y] -= 1
         dScores /= N
 
-        #Gradient for W2 & B2
-        dW2 = np.dot(output_H1_layer.T, dScores)
-        dB2 = np.sum(dScores, axis = 0)
+        #Gradient for W3 and B3
+        dW3 = np.dot(output_H2_layer.T, dScores)
+        dB3 = np.sum(dScores, axis=0)
 
-        #Backprop into hidden layer
-        dHidden = np.dot(dScores, self.W2.T)
+        dOutput_H2_layer = np.dot(dScores, self.W3.T)
+        dWeight_sum_2 = dOutput_H2_layer.copy()
+        dWeight_sum_2[weight_sum_2 <= 0] = 0
 
-        #zero out where pre-activation was <= 0
-        dHidden[weight_sum_1 <= 0] = 0
+        #Gradient for W2 and B2
+        dW2 = np.dot(output_H1_layer.T, dWeight_sum_2)
+        dB2 = np.sum(dWeight_sum_2, axis=0)
 
-        #Gradient for W1 & B1
-        dW1 = np.dot(x.T, dHidden)
-        dB1 = np.sum(dHidden, axis = 0)
+        #Gradient for W2 and B2
+        dOutput_H1_layer = np.dot(dWeight_sum_2, self.W2.T)
+        dWeight_sum_1 = dOutput_H1_layer.copy()
+        dWeight_sum_1[weight_sum_1 <= 0] = 0
+
+        #Gradient for W1 and B1
+        dW1 = np.dot(x.T, dWeight_sum_1)
+        dB1 = np.sum(dWeight_sum_1, axis=0)
 
         #Update weights and biases
         self.W1 -= self.LR * dW1
         self.B1 -= self.LR * dB1
         self.W2 -= self.LR * dW2
         self.B2 -= self.LR * dB2
-
-        return dW1, dB1, dW2, dB2
+        self.W3 -= self.LR * dW3
+        self.B3 -= self.LR * dB3
 
 
 
@@ -205,10 +223,10 @@ class VowelNN:
 
     def print_vowel_accuracy(self, x, y, title_suffix=""):
         """Display per-vowel correct/total accuracy in a figure."""
-        # Forward pass to get predictions
-        weight_sum_1 = np.dot(x, self.W1) + self.B1
-        output_H1_layer = np.maximum(0, weight_sum_1)
-        scores = np.dot(output_H1_layer, self.W2) + self.B2
+        # Forward pass to get predictions (2 hidden layers)
+        output_H1_layer = np.maximum(0, np.dot(x, self.W1) + self.B1)
+        output_H2_layer = np.maximum(0, np.dot(output_H1_layer, self.W2) + self.B2)
+        scores = np.dot(output_H2_layer, self.W3) + self.B3
         probabilities = self.softmax(scores)
         predictions = np.argmax(probabilities, axis=1)
 
@@ -247,16 +265,20 @@ class VowelNN:
 
 
 
+
+
 def main():
     model = VowelNN()
     model.train_model()
 
     print("Training complete")
     print("Train — Loss:", model.loss_history[-1], "| Accuracy:", model.accuracy_history[-1])
+    
+    
     # Test accuracy (generalization)
-    preds = np.argmax(model.softmax(
-        np.maximum(0, model.x_test @ model.W1 + model.B1) @ model.W2 + model.B2
-    ), axis=1)
+    output_H1_layer = np.maximum(0, np.dot(model.x_test, model.W1) + model.B1)
+    output_H2_layer = np.maximum(0, np.dot(output_H1_layer, model.W2) + model.B2)
+    preds = np.argmax(model.softmax(np.dot(output_H2_layer, model.W3) + model.B3), axis=1)
     test_acc = np.mean(preds == model.y_test)
     print("Test  — Accuracy:", f"{test_acc:.2%}", "(unseen data)")
 
