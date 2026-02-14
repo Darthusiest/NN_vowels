@@ -70,7 +70,7 @@ class VowelNN:
                 f1 = float(data[3])
                 f2 = float(data[4])
                 f3 = float(data[5])
-                
+
                 # avoid division by zero: treat 0 as 1 for ratio computation
                 f1_safe = f1 if f1 != 0 else 1.0
                 f2_safe = f2 if f2 != 0 else 1.0
@@ -127,18 +127,22 @@ class VowelNN:
 
     def process_data(self):
         """Standardize train, val, and test using train statistics only (no data leakage)."""
+        #convert the data to floats
         x_train = self.x_train.astype(float)
         x_val = self.x_val.astype(float)
         x_test = self.x_test.astype(float)
 
+        #calculate the mean and standard deviation of the data
         self.feature_mean = x_train.mean(axis=0)
         self.feature_std = x_train.std(axis=0)
         self.feature_std[self.feature_std == 0] = 1.0
 
+        #standardize the data
         self.x_train = (x_train - self.feature_mean) / self.feature_std
         self.x_val = (x_val - self.feature_mean) / self.feature_std
         self.x_test = (x_test - self.feature_mean) / self.feature_std
 
+        #shuffle the data
         index = np.random.permutation(self.x_train.shape[0])
         self.x_train = self.x_train[index]
         self.y_train = self.y_train[index]
@@ -149,18 +153,23 @@ class VowelNN:
 
     def sigmoid(self, epoch, max_epochs, max_lr = 0.15, min_lr = 0.01, k = 5):
         middle = max_epochs / 2
+        #calculate the learning rate using the sigmoid function
         return min_lr + (max_lr - min_lr) / (1 + np.exp(k * (epoch - middle) / middle))
 
     def relu(self, x):
+        #apply the relu function to the input
         return np.maximum(0, x)
 
     def relu_derivative(self, x):
+        #calculate the derivative of the relu function
         return (x > 0).astype(np.float64)
 
     def sigmoid_activation(self, x):
+        #apply the sigmoid function to the input
         return 1 / (1 + np.exp(-x))
 
     def sigmoid_derivative(self, x):
+        #calculate the derivative of the sigmoid function
         s = 1 / (1 + np.exp(-x))
         return s * (1 - s)
 
