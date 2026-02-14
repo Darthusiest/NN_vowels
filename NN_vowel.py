@@ -7,7 +7,7 @@ class VowelNN:
         self.x_train = None
         self.y_train = None
 
-        self.LR = 0.15 # 10% learning rate
+        self.LR = 0.15 # 0.35% learning rate
 
         self.input_size = 3
         self.hidden_size = 128
@@ -97,9 +97,9 @@ class VowelNN:
         x_test = self.x_test.astype(float)
 
         # Compute mean and std from TRAIN only
-        self.feature_mean = x_train.mean(axis=0)
-        self.feature_std = x_train.std(axis=0)
-        self.feature_std[self.feature_std == 0] = 1.0
+        self.feature_mean = x_train.mean(axis=0) #mean of each formant set
+        self.feature_std = x_train.std(axis=0) #standard deviation of each formant set (how much each set varies)
+        self.feature_std[self.feature_std == 0] = 1.0 #replace 0s with 1s to avoid division by zero
 
         # Standardize both sets
         self.x_train = (x_train - self.feature_mean) / self.feature_std
@@ -109,6 +109,14 @@ class VowelNN:
         index = np.random.permutation(self.x_train.shape[0])
         self.x_train = self.x_train[index]
         self.y_train = self.y_train[index]
+
+
+
+
+
+    def sigmoid(self, epoch, max_epochs, max_lr = 0.15, min_lr = 0.001, k = 10):
+        middle = max_epochs / 2
+        return min_lr + (max_lr - min_lr) / (1 + np.exp(-k * (epoch - middle) / middle))
 
 
 
@@ -124,6 +132,14 @@ class VowelNN:
         x = self.x_train
         y = self.y_train
         for epoch in range(epochs): #run through the data_set 1000 times 
+            
+            #Update learning rate
+            self.LR = self.sigmoid(epoch, epochs)
+
+            #Print every 100 epochs
+            if epoch % 100 == 0:
+                print(f"Epoch {epoch} - Learning Rate: {self.LR}")
+
 
             #Forward Pass
             #Input --> Hidden Layer 1
