@@ -3,26 +3,36 @@ import matplotlib.pyplot as plt
 
 
 class VowelNN:
-    def __init__(self):
+    def __init__(self, batch_size=64, momentum=0.9, weight_decay=1e-4, early_stopping_patience=80):
         self.x_train = None
         self.y_train = None
 
-        self.LR = 0.15 # 0.35% learning rate
+        self.LR = 0.15
+        self.batch_size = batch_size
+        self.momentum = momentum #momentum for the update of the weights
+        self.weight_decay = weight_decay
+        self.early_stopping_patience = early_stopping_patience
 
         self.input_size = 3
         self.hidden_size = 128
         self.hidden_size_2 = 64
         self.output_size = 12
 
-
+        # He initialization for ReLU
         self.W1 = np.random.randn(self.input_size, self.hidden_size) * np.sqrt(2 / self.input_size)
         self.B1 = np.zeros(self.hidden_size)
-
         self.W2 = np.random.randn(self.hidden_size, self.hidden_size_2) * np.sqrt(2 / self.hidden_size)
         self.B2 = np.zeros(self.hidden_size_2)
-
         self.W3 = np.random.randn(self.hidden_size_2, self.output_size) * np.sqrt(2 / self.hidden_size_2)
         self.B3 = np.zeros(self.output_size)
+
+        # Momentum velocities, created to store the previous updates of the weights in arrays filled with 0's
+        self.vW1 = np.zeros_like(self.W1)
+        self.vB1 = np.zeros_like(self.B1)
+        self.vW2 = np.zeros_like(self.W2)
+        self.vB2 = np.zeros_like(self.B2)
+        self.vW3 = np.zeros_like(self.W3)
+        self.vB3 = np.zeros_like(self.B3)
 
 
         path = "bigdata.dat.txt"
@@ -114,128 +124,161 @@ class VowelNN:
 
 
 
-    def sigmoid(self, epoch, max_epochs, max_lr = 0.15, min_lr = 0.001, k = 10):
+    def sigmoid(self, epoch, max_epochs, max_lr = 0.15, min_lr = 0.01, k = 5):
         middle = max_epochs / 2
         return min_lr + (max_lr - min_lr) / (1 + np.exp(k * (epoch - middle) / middle))
 
+    def relu(self, x):
+        return np.maximum(0, x)
+
+    def relu_derivative(self, x):
+        return (x > 0).astype(np.float64)
+
     def sigmoid_activation(self, x):
-        #Sigmoid activation function
         return 1 / (1 + np.exp(-x))
 
     def sigmoid_derivative(self, x):
-        #Sigmoid derivative function
-        return x * (1 - x)
+        s = 1 / (1 + np.exp(-x))
+        return s * (1 - s)
 
 
 
-    def train_model(self, epochs = 1000):
-        #Standardize data
+    def train_model(self, epochs=1000):
         self.process_data()
-
         self.loss_history = []
         self.accuracy_history = []
-        
-        x = self.x_train
-        y = self.y_train
-        for epoch in range(epochs): #run through the data_set 1000 times 
-            
-            #Update learning rate
+        n = self.x_train.shape[0]
+        best_test_loss = np.inf
+        epochs_without_improvement = 0
+
+        for epoch in range(epochs):
             self.LR = self.sigmoid(epoch, epochs)
+            # Shuffle training data each epoch
+            perm = np.random.permutation(n)
+            x_shuf = self.x_train[perm]
+            y_shuf = self.y_train[perm]
 
-            #Print every 100 epochs
+            epoch_losses = []
+            epoch_correct = 0
+            epoch_total = 0
+
+            for start in range(0, n, self.batch_size):
+                end = min(start + self.batch_size, n)
+                x = x_shuf[start:end]
+                y = y_shuf[start:end]
+
+                # Forward pass (ReLU hidden layers)
+                weight_sum_1 = np.dot(x, self.W1) + self.B1
+                output_H1_layer = self.relu(weight_sum_1)
+                weight_sum_2 = np.dot(output_H1_layer, self.W2) + self.B2
+                output_H2_layer = self.relu(weight_sum_2)
+                scores = np.dot(output_H2_layer, self.W3) + self.B3
+                probabilities = self.softmax(scores)
+
+                N = y.shape[0]
+                prevent_crash = 1e-12
+                correct_probs = probabilities[np.arange(N), y]
+                loss = -np.mean(np.log(correct_probs + prevent_crash))
+                epoch_losses.append(loss)
+                predictions = np.argmax(probabilities, axis=1)
+                epoch_correct += np.sum(predictions == y)
+                epoch_total += N
+
+                self.back_propagation(x, y, probabilities, weight_sum_1, output_H1_layer, weight_sum_2, output_H2_layer)
+
+            train_loss = np.mean(epoch_losses)
+            train_acc = epoch_correct / epoch_total
+            self.loss_history.append(train_loss)
+            self.accuracy_history.append(train_acc)
+
+            # Test loss for early stopping
+            test_loss, _ = self._loss_and_accuracy(self.x_test, self.y_test)
+            if test_loss < best_test_loss:
+                best_test_loss = test_loss
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+
             if epoch % 100 == 0:
-                print(f"Epoch {epoch} - Learning Rate: {self.LR}")
+                print(f"Epoch {epoch} - LR: {self.LR:.4f} | Train loss: {train_loss:.4f} | Train acc: {train_acc:.2%} | Test loss: {test_loss:.4f}")
 
+            if epochs_without_improvement >= self.early_stopping_patience:
+                print(f"Early stopping at epoch {epoch} (no test loss improvement for {self.early_stopping_patience} epochs)")
+                break
 
-            #Forward Pass
-            #Input --> Hidden Layer 1
-            weight_sum_1 = np.dot(x, self.W1) + self.B1
-            output_H1_layer = self.sigmoid_activation(weight_sum_1)
-
-            #Hidden Layer 2
-            weight_sum_2 = np.dot(output_H1_layer, self.W2) + self.B2
-            output_H2_layer = self.sigmoid_activation(weight_sum_2)
-
-            #Hidden --> Output
-            scores = np.dot(output_H2_layer, self.W3) + self.B3
-            
-            probabilities = self.softmax(scores)
-            
-            
-            
-            #Compute Loss
-            N = y.shape[0]
-            prevent_crash = 1e-12
-            correct_probs = probabilities[np.arange(N), y]
-            loss = -np.mean(np.log(correct_probs + prevent_crash))
-
-            #compute accuracy
-            predictions = np.argmax(probabilities, axis = 1) #pick highest prob vowel per row
-            accuracy = np.mean(predictions == y) #T/F accuracy per row
-
-            #Backpropagation / update weights and biases
-            self.back_propagation(x, y, probabilities, weight_sum_1, output_H1_layer, weight_sum_2, output_H2_layer)
-
-            self.loss_history.append(loss)
-            self.accuracy_history.append(accuracy)
-
-
-        #after training, plot the loss and accuracy history
-        plt.plot(self.loss_history, label = "Loss")
-        plt.plot(self.accuracy_history, label = "Accuracy")
+        plt.plot(self.loss_history, label="Loss")
+        plt.plot(self.accuracy_history, label="Accuracy")
         plt.legend()
         plt.show()
-
         self.print_vowel_accuracy(self.x_test, self.y_test, title_suffix="(Test set — unseen data)")
 
 
 
 
 
-    #Backpropagation (2 hidden layers)
     def back_propagation(self, x, y, probabilities, weight_sum_1, output_H1_layer, weight_sum_2, output_H2_layer):
         N = x.shape[0]
-
         dScores = probabilities.copy()
         dScores[np.arange(N), y] -= 1
         dScores /= N
 
-        #Gradient for W3 and B3
         dW3 = np.dot(output_H2_layer.T, dScores)
         dB3 = np.sum(dScores, axis=0)
-
         dOutput_H2_layer = np.dot(dScores, self.W3.T)
-        dWeight_sum_2 = dOutput_H2_layer * self.sigmoid_derivative(weight_sum_2)
+        dWeight_sum_2 = dOutput_H2_layer * self.relu_derivative(weight_sum_2)
 
-        #Gradient for W2 and B2
         dW2 = np.dot(output_H1_layer.T, dWeight_sum_2)
         dB2 = np.sum(dWeight_sum_2, axis=0)
-
-        #Gradient for W2 and B2
         dOutput_H1_layer = np.dot(dWeight_sum_2, self.W2.T)
-        dWeight_sum_1 = dOutput_H1_layer * self.sigmoid_derivative(weight_sum_1)
+        dWeight_sum_1 = dOutput_H1_layer * self.relu_derivative(weight_sum_1)
 
-        #Gradient for W1 and B1
         dW1 = np.dot(x.T, dWeight_sum_1)
         dB1 = np.sum(dWeight_sum_1, axis=0)
 
-        #Update weights and biases
-        self.W1 -= self.LR * dW1
-        self.B1 -= self.LR * dB1
-        self.W2 -= self.LR * dW2
-        self.B2 -= self.LR * dB2
-        self.W3 -= self.LR * dW3
-        self.B3 -= self.LR * dB3
+        # L2 regularization gradient
+        dW1 += self.weight_decay * self.W1
+        dW2 += self.weight_decay * self.W2
+        dW3 += self.weight_decay * self.W3
+
+        # Momentum updates
+        self.vW1 = self.momentum * self.vW1 + dW1
+        self.vB1 = self.momentum * self.vB1 + dB1
+        self.vW2 = self.momentum * self.vW2 + dW2
+        self.vB2 = self.momentum * self.vB2 + dB2
+        self.vW3 = self.momentum * self.vW3 + dW3
+        self.vB3 = self.momentum * self.vB3 + dB3
+
+        self.W1 -= self.LR * self.vW1
+        self.B1 -= self.LR * self.vB1
+        self.W2 -= self.LR * self.vW2
+        self.B2 -= self.LR * self.vB2
+        self.W3 -= self.LR * self.vW3
+        self.B3 -= self.LR * self.vB3
 
 
 
 
 
     def softmax(self, scores):
-        scores_shifted = scores - np.max(scores, axis = 1, keepdims = True)
+        scores_shifted = scores - np.max(scores, axis=1, keepdims=True)
         exp_scores = np.exp(scores_shifted)
-        
-        return exp_scores / np.sum(exp_scores, axis = 1, keepdims = True)
+        return exp_scores / np.sum(exp_scores, axis=1, keepdims=True)
+
+    def _loss_and_accuracy(self, x, y):
+        """Forward pass with ReLU; returns cross-entropy loss and accuracy."""
+        weight_sum_1 = np.dot(x, self.W1) + self.B1
+        output_H1_layer = self.relu(weight_sum_1)
+        weight_sum_2 = np.dot(output_H1_layer, self.W2) + self.B2
+        output_H2_layer = self.relu(weight_sum_2)
+        scores = np.dot(output_H2_layer, self.W3) + self.B3
+        probabilities = self.softmax(scores)
+        N = y.shape[0]
+        prevent_crash = 1e-12
+        correct_probs = probabilities[np.arange(N), y]
+        loss = -np.mean(np.log(correct_probs + prevent_crash))
+        predictions = np.argmax(probabilities, axis=1)
+        accuracy = np.mean(predictions == y)
+        return loss, accuracy
 
 
 
@@ -243,9 +286,8 @@ class VowelNN:
 
     def print_vowel_accuracy(self, x, y, title_suffix=""):
         """Display per-vowel correct/total accuracy in a figure."""
-        # Forward pass to get predictions (2 hidden layers)
-        output_H1_layer = self.sigmoid_activation(np.dot(x, self.W1) + self.B1)
-        output_H2_layer = self.sigmoid_activation(np.dot(output_H1_layer, self.W2) + self.B2)
+        output_H1_layer = self.relu(np.dot(x, self.W1) + self.B1)
+        output_H2_layer = self.relu(np.dot(output_H1_layer, self.W2) + self.B2)
         scores = np.dot(output_H2_layer, self.W3) + self.B3
         probabilities = self.softmax(scores)
         predictions = np.argmax(probabilities, axis=1)
@@ -296,8 +338,8 @@ def main():
     
     
     # Test accuracy (generalization)
-    output_H1_layer = model.sigmoid_activation(np.dot(model.x_test, model.W1) + model.B1)
-    output_H2_layer = model.sigmoid_activation(np.dot(output_H1_layer, model.W2) + model.B2)
+    output_H1_layer = model.relu(np.dot(model.x_test, model.W1) + model.B1)
+    output_H2_layer = model.relu(np.dot(output_H1_layer, model.W2) + model.B2)
     preds = np.argmax(model.softmax(np.dot(output_H2_layer, model.W3) + model.B3), axis=1)
     test_acc = np.mean(preds == model.y_test)
     print("Test  — Accuracy:", f"{test_acc:.2%}", "(unseen data)")
