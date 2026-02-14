@@ -182,6 +182,8 @@ class VowelNN:
         self.process_data()
         self.loss_history = []
         self.accuracy_history = []
+        self.val_loss_history = []
+        self.val_accuracy_history = []
         n = self.x_train.shape[0]
         best_val_loss = np.inf
         epochs_without_improvement = 0
@@ -243,8 +245,9 @@ class VowelNN:
             self.accuracy_history.append(train_acc)
 
             #Calculate the loss and accuracy for the validation set
-            val_loss, val_acc = self._loss_and_accuracy(self.x_val, self.y_val)\
-
+            val_loss, val_acc = self._loss_and_accuracy(self.x_val, self.y_val)
+            self.val_loss_history.append(val_loss)
+            self.val_accuracy_history.append(val_acc)
 
             #If the validation loss is lower than the best validation loss 
             #update the best validation loss and reset the epochs without improvement
@@ -269,11 +272,36 @@ class VowelNN:
                 print(f"Early stopping at epoch {epoch} (no val loss improvement for {self.early_stopping_patience} epochs)")
                 break
 
+        # Popup 1: Train loss & accuracy
+        plt.figure()
         plt.plot(self.loss_history, label="Loss")
         plt.plot(self.accuracy_history, label="Accuracy")
         plt.legend()
+        plt.xlabel("Epoch")
         plt.show()
+
+        # Popup 2: Per-vowel accuracy bar chart
         self.print_vowel_accuracy(self.x_test, self.y_test, title_suffix="(Test set — unseen data)")
+
+        # Popup 3: Training vs validation loss & accuracy (separate figure)
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+        epochs_range = range(len(self.loss_history))
+        ax1.plot(epochs_range, self.loss_history, label="Train loss", color="C0")
+        ax1.plot(epochs_range, self.val_loss_history, label="Val loss", color="C1")
+        ax1.set_xlabel("Epoch")
+        ax1.set_ylabel("Loss")
+        ax1.set_title("Loss")
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+        ax2.plot(epochs_range, self.accuracy_history, label="Train acc", color="C0")
+        ax2.plot(epochs_range, self.val_accuracy_history, label="Val acc", color="C1")
+        ax2.set_xlabel("Epoch")
+        ax2.set_ylabel("Accuracy")
+        ax2.set_title("Accuracy")
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.show()
 
 
 
