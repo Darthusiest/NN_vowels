@@ -13,7 +13,7 @@ class VowelNN:
         self.weight_decay = weight_decay
         self.early_stopping_patience = early_stopping_patience
 
-        self.input_size = 3
+        self.input_size = 7  # F1, F2, F3, F1/F2, F3/F2, F2−F1, F3−F2
         self.hidden_size = 128
         self.hidden_size_2 = 64
         self.output_size = 12
@@ -65,15 +65,24 @@ class VowelNN:
                 if filename[0] not in ["m", "w", "b", "g"]:
                     continue #skip lines until we are getting the correct gender
 
-
-                #get formants from data
+                vowel = filename[3:5]
+                # get formants from data
                 f1 = float(data[3])
                 f2 = float(data[4])
                 f3 = float(data[5])
+                
+                # avoid division by zero: treat 0 as 1 for ratio computation
+                f1_safe = f1 if f1 != 0 else 1.0
+                f2_safe = f2 if f2 != 0 else 1.0
+                f3_safe = f3 if f3 != 0 else 1.0
 
-                vowel = filename[3:5]
+                ratio_f1_f2 = f1_safe / f2_safe
+                ratio_f3_f2 = f3_safe / f2_safe
+                diff_f2_f1 = f2 - f1
+                diff_f3_f2 = f3 - f2
 
-                x.append([f1, f2, f3])
+                # 7 features: F1, F2, F3, F1/F2, F3/F2, F2−F1, F3−F2
+                x.append([f1, f2, f3, ratio_f1_f2, ratio_f3_f2, diff_f2_f1, diff_f3_f2])
                 y.append(vowels[vowel])
 
         return np.array(x), np.array(y)
