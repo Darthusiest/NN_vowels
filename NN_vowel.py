@@ -118,8 +118,13 @@ class VowelNN:
         middle = max_epochs / 2
         return min_lr + (max_lr - min_lr) / (1 + np.exp(k * (epoch - middle) / middle))
 
+    def sigmoid_activation(self, x):
+        #Sigmoid activation function
+        return 1 / (1 + np.exp(-x))
 
-
+    def sigmoid_derivative(self, x):
+        #Sigmoid derivative function
+        return x * (1 - x)
 
 
 
@@ -145,11 +150,11 @@ class VowelNN:
             #Forward Pass
             #Input --> Hidden Layer 1
             weight_sum_1 = np.dot(x, self.W1) + self.B1
-            output_H1_layer = np.maximum(0, weight_sum_1)
+            output_H1_layer = self.sigmoid_activation(weight_sum_1)
 
             #Hidden Layer 2
             weight_sum_2 = np.dot(output_H1_layer, self.W2) + self.B2
-            output_H2_layer = np.maximum(0, weight_sum_2)
+            output_H2_layer = self.sigmoid_activation(weight_sum_2)
 
             #Hidden --> Output
             scores = np.dot(output_H2_layer, self.W3) + self.B3
@@ -200,8 +205,7 @@ class VowelNN:
         dB3 = np.sum(dScores, axis=0)
 
         dOutput_H2_layer = np.dot(dScores, self.W3.T)
-        dWeight_sum_2 = dOutput_H2_layer.copy()
-        dWeight_sum_2[weight_sum_2 <= 0] = 0
+        dWeight_sum_2 = dOutput_H2_layer * self.sigmoid_derivative(weight_sum_2)
 
         #Gradient for W2 and B2
         dW2 = np.dot(output_H1_layer.T, dWeight_sum_2)
@@ -209,8 +213,7 @@ class VowelNN:
 
         #Gradient for W2 and B2
         dOutput_H1_layer = np.dot(dWeight_sum_2, self.W2.T)
-        dWeight_sum_1 = dOutput_H1_layer.copy()
-        dWeight_sum_1[weight_sum_1 <= 0] = 0
+        dWeight_sum_1 = dOutput_H1_layer * self.sigmoid_derivative(weight_sum_1)
 
         #Gradient for W1 and B1
         dW1 = np.dot(x.T, dWeight_sum_1)
@@ -241,8 +244,8 @@ class VowelNN:
     def print_vowel_accuracy(self, x, y, title_suffix=""):
         """Display per-vowel correct/total accuracy in a figure."""
         # Forward pass to get predictions (2 hidden layers)
-        output_H1_layer = np.maximum(0, np.dot(x, self.W1) + self.B1)
-        output_H2_layer = np.maximum(0, np.dot(output_H1_layer, self.W2) + self.B2)
+        output_H1_layer = self.sigmoid_activation(np.dot(x, self.W1) + self.B1)
+        output_H2_layer = self.sigmoid_activation(np.dot(output_H1_layer, self.W2) + self.B2)
         scores = np.dot(output_H2_layer, self.W3) + self.B3
         probabilities = self.softmax(scores)
         predictions = np.argmax(probabilities, axis=1)
@@ -293,8 +296,8 @@ def main():
     
     
     # Test accuracy (generalization)
-    output_H1_layer = np.maximum(0, np.dot(model.x_test, model.W1) + model.B1)
-    output_H2_layer = np.maximum(0, np.dot(output_H1_layer, model.W2) + model.B2)
+    output_H1_layer = model.sigmoid_activation(np.dot(model.x_test, model.W1) + model.B1)
+    output_H2_layer = model.sigmoid_activation(np.dot(output_H1_layer, model.W2) + model.B2)
     preds = np.argmax(model.softmax(np.dot(output_H2_layer, model.W3) + model.B3), axis=1)
     test_acc = np.mean(preds == model.y_test)
     print("Test  — Accuracy:", f"{test_acc:.2%}", "(unseen data)")
