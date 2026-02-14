@@ -37,7 +37,9 @@ class VowelNN:
 
         path = "bigdata.dat.txt"
         x_all, y_all = self.load_data(path)
-        self.x_train, self.y_train, self.x_test, self.y_test = self.split_data(x_all, y_all, test_frac=0.2, seed=42)
+        self.x_train, self.y_train, self.x_val, self.y_val, self.x_test, self.y_test = self.split_data(
+            x_all, y_all, test_frac=0.2, val_frac=0.15, seed=42
+        )
 
 
 
@@ -79,43 +81,55 @@ class VowelNN:
 
 
 
-    #Stratified 80/20 train/test split so each vowel is represented in both sets.
-    def split_data(self, x, y, test_frac=0.2, seed=42):
+    def split_data(self, x, y, test_frac=0.2, val_frac=0.15, seed=42):
+        """Stratified train/val/test split so each vowel is represented in all sets."""
         np.random.seed(seed)
-        train_idx, test_idx = [], []
+        train_idx, val_idx, test_idx = [], [], []
 
         for class_id in range(self.output_size):
             mask = y == class_id
             indices = np.where(mask)[0]
             np.random.shuffle(indices)
-            n_test = max(1, int(len(indices) * test_frac))
-            n_train = len(indices) - n_test
+            n = len(indices)
+            n_test = max(1, int(n * test_frac))
+            n_val = max(1, int(n * val_frac))
+            n_train = n - n_test - n_val
+            if n_train < 1:
+                n_train = 1
+                n_val = min(n_val, n - 2)
+                n_test = n - n_train - n_val
             train_idx.extend(indices[:n_train])
-            test_idx.extend(indices[n_train:])
+            val_idx.extend(indices[n_train : n_train + n_val])
+            test_idx.extend(indices[n_train + n_val :])
         train_idx = np.array(train_idx)
+        val_idx = np.array(val_idx)
         test_idx = np.array(test_idx)
         np.random.shuffle(train_idx)
+        np.random.shuffle(val_idx)
         np.random.shuffle(test_idx)
-        return x[train_idx], y[train_idx], x[test_idx], y[test_idx]
+        return (
+            x[train_idx], y[train_idx],
+            x[val_idx], y[val_idx],
+            x[test_idx], y[test_idx],
+        )
 
 
 
 
     def process_data(self):
-        """Standardize train and test data using train statistics only (no data leakage)."""
+        """Standardize train, val, and test using train statistics only (no data leakage)."""
         x_train = self.x_train.astype(float)
+        x_val = self.x_val.astype(float)
         x_test = self.x_test.astype(float)
 
-        # Compute mean and std from TRAIN only
-        self.feature_mean = x_train.mean(axis=0) #mean of each formant set
-        self.feature_std = x_train.std(axis=0) #standard deviation of each formant set (how much each set varies)
-        self.feature_std[self.feature_std == 0] = 1.0 #replace 0s with 1s to avoid division by zero
+        self.feature_mean = x_train.mean(axis=0)
+        self.feature_std = x_train.std(axis=0)
+        self.feature_std[self.feature_std == 0] = 1.0
 
-        # Standardize both sets
         self.x_train = (x_train - self.feature_mean) / self.feature_std
+        self.x_val = (x_val - self.feature_mean) / self.feature_std
         self.x_test = (x_test - self.feature_mean) / self.feature_std
 
-        # Shuffle data so no bias in learning
         index = np.random.permutation(self.x_train.shape[0])
         self.x_train = self.x_train[index]
         self.y_train = self.y_train[index]
@@ -148,12 +162,11 @@ class VowelNN:
         self.loss_history = []
         self.accuracy_history = []
         n = self.x_train.shape[0]
-        best_test_loss = np.inf
+        best_val_loss = np.inf
         epochs_without_improvement = 0
 
         for epoch in range(epochs):
             self.LR = self.sigmoid(epoch, epochs)
-            # Shuffle training data each epoch
             perm = np.random.permutation(n)
             x_shuf = self.x_train[perm]
             y_shuf = self.y_train[perm]
@@ -167,7 +180,6 @@ class VowelNN:
                 x = x_shuf[start:end]
                 y = y_shuf[start:end]
 
-                # Forward pass (ReLU hidden layers)
                 weight_sum_1 = np.dot(x, self.W1) + self.B1
                 output_H1_layer = self.relu(weight_sum_1)
                 weight_sum_2 = np.dot(output_H1_layer, self.W2) + self.B2
@@ -191,19 +203,18 @@ class VowelNN:
             self.loss_history.append(train_loss)
             self.accuracy_history.append(train_acc)
 
-            # Test loss for early stopping
-            test_loss, _ = self._loss_and_accuracy(self.x_test, self.y_test)
-            if test_loss < best_test_loss:
-                best_test_loss = test_loss
+            val_loss, val_acc = self._loss_and_accuracy(self.x_val, self.y_val)
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
                 epochs_without_improvement = 0
             else:
                 epochs_without_improvement += 1
 
             if epoch % 100 == 0:
-                print(f"Epoch {epoch} - LR: {self.LR:.4f} | Train loss: {train_loss:.4f} | Train acc: {train_acc:.2%} | Test loss: {test_loss:.4f}")
+                print(f"Epoch {epoch} - LR: {self.LR:.4f} | Train loss: {train_loss:.4f} | Train acc: {train_acc:.2%} | Val loss: {val_loss:.4f} | Val acc: {val_acc:.2%}")
 
             if epochs_without_improvement >= self.early_stopping_patience:
-                print(f"Early stopping at epoch {epoch} (no test loss improvement for {self.early_stopping_patience} epochs)")
+                print(f"Early stopping at epoch {epoch} (no val loss improvement for {self.early_stopping_patience} epochs)")
                 break
 
         plt.plot(self.loss_history, label="Loss")
