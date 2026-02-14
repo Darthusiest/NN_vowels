@@ -3,15 +3,16 @@ import matplotlib.pyplot as plt
 
 
 class VowelNN:
-    def __init__(self, batch_size=64, momentum=0.9, weight_decay=1e-4, early_stopping_patience=80):
+    def __init__(self, batch_size=256, momentum=0.85, weight_decay=1e-4, early_stopping_patience=80, max_grad_norm=1.0):
         self.x_train = None
         self.y_train = None
 
-        self.LR = 0.15
+        self.LR = 0.03
         self.batch_size = batch_size
         self.momentum = momentum #momentum for the update of the weights
         self.weight_decay = weight_decay
         self.early_stopping_patience = early_stopping_patience
+        self.max_grad_norm = max_grad_norm
 
         self.input_size = 31  # 7 base (F1,F2,F3,ratios,diffs) + 24 trajectory (F1,F2,F3 at 10%..80%)
         self.hidden_size = 128
@@ -153,7 +154,7 @@ class VowelNN:
 
 
 
-    def sigmoid(self, epoch, max_epochs, max_lr = 0.15, min_lr = 0.01, k = 5):
+    def sigmoid(self, epoch, max_epochs, max_lr=0.03, min_lr=0.001, k=5):
         middle = max_epochs / 2
         #calculate the learning rate using the sigmoid function
         return min_lr + (max_lr - min_lr) / (1 + np.exp(k * (epoch - middle) / middle))
@@ -312,6 +313,13 @@ class VowelNN:
         dW1 += self.weight_decay * self.W1
         dW2 += self.weight_decay * self.W2
         dW3 += self.weight_decay * self.W3
+
+        # Gradient clipping (scale all gradients if total norm exceeds max_grad_norm)
+        grads = [dW1, dB1, dW2, dB2, dW3, dB3]
+        total_norm = np.sqrt(sum(np.sum(g**2) for g in grads))
+        if total_norm > self.max_grad_norm:
+            scale = self.max_grad_norm / total_norm
+            dW1, dB1, dW2, dB2, dW3, dB3 = [g * scale for g in grads]
 
         # Momentum updates
         self.vW1 = self.momentum * self.vW1 + dW1
