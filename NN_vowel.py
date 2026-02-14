@@ -13,7 +13,7 @@ class VowelNN:
         self.weight_decay = weight_decay
         self.early_stopping_patience = early_stopping_patience
 
-        self.input_size = 7  # F1, F2, F3, F1/F2, F3/F2, F2−F1, F3−F2
+        self.input_size = 31  # 7 base (F1,F2,F3,ratios,diffs) + 24 trajectory (F1,F2,F3 at 10%..80%)
         self.hidden_size = 128
         self.hidden_size_2 = 64
         self.output_size = 12
@@ -58,8 +58,8 @@ class VowelNN:
                 data = line.strip().split() #remove whitespace and split into list
                 
 
-                if len(data) < 6:
-                    continue #skip lines until we are getting the formants
+                if len(data) < 30:
+                    continue  # need cols 1–30 for trajectory (F1,F2,F3 at 10%..80%)
                 
                 filename = data[0]
                 if filename[0] not in ["m", "w", "b", "g"]:
@@ -81,8 +81,10 @@ class VowelNN:
                 diff_f2_f1 = f2 - f1
                 diff_f3_f2 = f3 - f2
 
-                # 7 features: F1, F2, F3, F1/F2, F3/F2, F2−F1, F3−F2
-                x.append([f1, f2, f3, ratio_f1_f2, ratio_f3_f2, diff_f2_f1, diff_f3_f2])
+                # trajectory: F1,F2,F3 at 10%,20%,...,80% (cols 7–30 → indices 6–29)
+                trajectory = [float(data[i]) for i in range(6, 30)]
+                # 31 features: 7 base + 24 trajectory
+                x.append([f1, f2, f3, ratio_f1_f2, ratio_f3_f2, diff_f2_f1, diff_f3_f2] + trajectory)
                 y.append(vowels[vowel])
 
         return np.array(x), np.array(y)
