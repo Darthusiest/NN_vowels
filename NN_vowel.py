@@ -116,7 +116,8 @@ class VowelNN:
 
     def sigmoid(self, epoch, max_epochs, max_lr = 0.15, min_lr = 0.001, k = 10):
         middle = max_epochs / 2
-        return min_lr + (max_lr - min_lr) / (1 + np.exp(-k * (epoch - middle) / middle))
+        return min_lr + (max_lr - min_lr) / (1 + np.exp(k * (epoch - middle) / middle))
+
 
 
 
