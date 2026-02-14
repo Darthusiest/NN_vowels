@@ -167,51 +167,82 @@ class VowelNN:
 
         for epoch in range(epochs):
             self.LR = self.sigmoid(epoch, epochs)
+
+            #Shuffle the data
             perm = np.random.permutation(n)
             x_shuf = self.x_train[perm]
             y_shuf = self.y_train[perm]
 
+            #Variables to store the loss and accuracy for the epoch
             epoch_losses = []
             epoch_correct = 0
             epoch_total = 0
 
+            #Batch training
             for start in range(0, n, self.batch_size):
                 end = min(start + self.batch_size, n)
                 x = x_shuf[start:end]
                 y = y_shuf[start:end]
 
+                #Forward pass
+                #Hidden layer 1
                 weight_sum_1 = np.dot(x, self.W1) + self.B1
                 output_H1_layer = self.relu(weight_sum_1)
+
+                #Hidden layer 2
                 weight_sum_2 = np.dot(output_H1_layer, self.W2) + self.B2
                 output_H2_layer = self.relu(weight_sum_2)
+
+                #Output layer
                 scores = np.dot(output_H2_layer, self.W3) + self.B3
                 probabilities = self.softmax(scores)
 
+                #Calculate the loss and accuracy
                 N = y.shape[0]
                 prevent_crash = 1e-12
                 correct_probs = probabilities[np.arange(N), y]
+
+                #cross-entropy loss
                 loss = -np.mean(np.log(correct_probs + prevent_crash))
                 epoch_losses.append(loss)
                 predictions = np.argmax(probabilities, axis=1)
+
+                #predictions is an array of the predicted classes for each sample
+                #calculate the accuracy
                 epoch_correct += np.sum(predictions == y)
                 epoch_total += N
 
+                #Backpropagation
                 self.back_propagation(x, y, probabilities, weight_sum_1, output_H1_layer, weight_sum_2, output_H2_layer)
 
+            #Calculate the average loss and accuracy for the epoch
             train_loss = np.mean(epoch_losses)
             train_acc = epoch_correct / epoch_total
             self.loss_history.append(train_loss)
             self.accuracy_history.append(train_acc)
 
-            val_loss, val_acc = self._loss_and_accuracy(self.x_val, self.y_val)
+            #Calculate the loss and accuracy for the validation set
+            val_loss, val_acc = self._loss_and_accuracy(self.x_val, self.y_val)\
+
+
+            #If the validation loss is lower than the best validation loss 
+            #update the best validation loss and reset the epochs without improvement
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 epochs_without_improvement = 0
             else:
+                #If the validation loss is not lower than the best validation loss
+                #Increment the number of epochs without improvement
                 epochs_without_improvement += 1
 
+
+            #Print the loss and accuracy for the epoch every 100 epochs
             if epoch % 100 == 0:
-                print(f"Epoch {epoch} - LR: {self.LR:.4f} | Train loss: {train_loss:.4f} | Train acc: {train_acc:.2%} | Val loss: {val_loss:.4f} | Val acc: {val_acc:.2%}")
+                print(f"Epoch {epoch}")
+                print(f"  Learning rate:  {self.LR:.4f}")
+                print(f"  Train — loss: {train_loss:.4f}   acc: {train_acc:.2%}")
+                print(f"  Val   — loss: {val_loss:.4f}   acc: {val_acc:.2%}")
+                print()
 
             if epochs_without_improvement >= self.early_stopping_patience:
                 print(f"Early stopping at epoch {epoch} (no val loss improvement for {self.early_stopping_patience} epochs)")
@@ -229,20 +260,31 @@ class VowelNN:
 
     def back_propagation(self, x, y, probabilities, weight_sum_1, output_H1_layer, weight_sum_2, output_H2_layer):
         N = x.shape[0]
+        
+        
+        #dScores is an array of the derivatives of the scores for each sample
         dScores = probabilities.copy()
+        
+        #subtract 1 from the score for the correct class
         dScores[np.arange(N), y] -= 1
         dScores /= N
 
+
+        #Gradient for the weights and biases of the output layer
         dW3 = np.dot(output_H2_layer.T, dScores)
         dB3 = np.sum(dScores, axis=0)
         dOutput_H2_layer = np.dot(dScores, self.W3.T)
+
+
+        #Gradient for the weights and biases of the hidden layer 2
         dWeight_sum_2 = dOutput_H2_layer * self.relu_derivative(weight_sum_2)
 
+
+        #Gradient for the weights and biases of the hidden layer 1
         dW2 = np.dot(output_H1_layer.T, dWeight_sum_2)
         dB2 = np.sum(dWeight_sum_2, axis=0)
         dOutput_H1_layer = np.dot(dWeight_sum_2, self.W2.T)
         dWeight_sum_1 = dOutput_H1_layer * self.relu_derivative(weight_sum_1)
-
         dW1 = np.dot(x.T, dWeight_sum_1)
         dB1 = np.sum(dWeight_sum_1, axis=0)
 
@@ -259,6 +301,7 @@ class VowelNN:
         self.vW3 = self.momentum * self.vW3 + dW3
         self.vB3 = self.momentum * self.vB3 + dB3
 
+        #Update the weights and biases with the momentum
         self.W1 -= self.LR * self.vW1
         self.B1 -= self.LR * self.vB1
         self.W2 -= self.LR * self.vW2
@@ -274,6 +317,10 @@ class VowelNN:
         scores_shifted = scores - np.max(scores, axis=1, keepdims=True)
         exp_scores = np.exp(scores_shifted)
         return exp_scores / np.sum(exp_scores, axis=1, keepdims=True)
+
+
+
+
 
     def _loss_and_accuracy(self, x, y):
         """Forward pass with ReLU; returns cross-entropy loss and accuracy."""
