@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 
 
 class VowelNN:
-    def __init__(self, batch_size=256, momentum=0.85, weight_decay=1e-4, early_stopping_patience=80, max_grad_norm=1.0):
+    def __init__(self, batch_size=256, momentum=0.75, weight_decay=1e-4, early_stopping_patience=80, max_grad_norm=1.0):
         self.x_train = None
         self.y_train = None
 
@@ -378,6 +378,27 @@ class VowelNN:
 
 
 
+    def forward_single(self, x):
+        """Forward pass for a single sample. x: shape (31,) or (1, 31). Returns (x, h1, h2, probs)."""
+        x = np.atleast_2d(x) #convert the input to a 2D array
+        weight_sum_1 = np.dot(x, self.W1) + self.B1
+
+
+        h1 = self.relu(weight_sum_1) #apply the relu function to the input
+        weight_sum_2 = np.dot(h1, self.W2) + self.B2
+
+
+        h2 = self.relu(weight_sum_2) #apply the relu function to the input
+        scores = np.dot(h2, self.W3) + self.B3
+
+        
+        probs = self.softmax(scores) #apply the softmax function to the input
+        return x.squeeze(), h1.squeeze(), h2.squeeze(), probs.squeeze()
+
+
+
+
+
     def _loss_and_accuracy(self, x, y):
         """Forward pass with ReLU; returns cross-entropy loss and accuracy."""
         weight_sum_1 = np.dot(x, self.W1) + self.B1
@@ -457,6 +478,10 @@ def main():
     preds = np.argmax(model.softmax(np.dot(output_H2_layer, model.W3) + model.B3), axis=1)
     test_acc = np.mean(preds == model.y_test)
     print("Test  — Accuracy:", f"{test_acc:.2%}", "(unseen data)")
+
+    # Interactive activation visualization
+    from nn_visualizer import launch_visualizer
+    launch_visualizer(model, model.x_test, model.y_test)
 
 if __name__ == "__main__":
     main()
