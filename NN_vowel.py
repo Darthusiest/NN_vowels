@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 
 
 class VowelNN:
-    def __init__(self, batch_size=256, momentum=0.75, weight_decay=1e-4, early_stopping_patience=80, max_grad_norm=1.0):
+    def __init__(self, batch_size=128, momentum=0.85, weight_decay=1e-5, early_stopping_patience=120, max_grad_norm=1.0):
         self.x_train = None
         self.y_train = None
 
@@ -15,8 +15,8 @@ class VowelNN:
         self.max_grad_norm = max_grad_norm
 
         self.input_size = 31  # 7 base (F1,F2,F3,ratios,diffs) + 24 trajectory (F1,F2,F3 at 10%..80%)
-        self.hidden_size = 128
-        self.hidden_size_2 = 64
+        self.hidden_size = 256   # slightly larger for 12-class; helps reach ~90%
+        self.hidden_size_2 = 128
         self.output_size = 12
 
         # He initialization for ReLU
@@ -154,9 +154,9 @@ class VowelNN:
 
 
 
-    def sigmoid(self, epoch, max_epochs, max_lr=0.03, min_lr=0.001, k=5):
+    def sigmoid(self, epoch, max_epochs, max_lr=0.04, min_lr=0.0005, k=4):
+        """LR schedule: start higher, decay more gently (k=4) so model can refine longer."""
         middle = max_epochs / 2
-        #calculate the learning rate using the sigmoid function
         return min_lr + (max_lr - min_lr) / (1 + np.exp(k * (epoch - middle) / middle))
 
     def relu(self, x):
@@ -178,7 +178,7 @@ class VowelNN:
 
 
 
-    def train_model(self, epochs=1000):
+    def train_model(self, epochs=2000):
         self.process_data()
         self.loss_history = []
         self.accuracy_history = []
