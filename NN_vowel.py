@@ -3,14 +3,15 @@ import matplotlib.pyplot as plt
 
 
 class VowelNN:
-    def __init__(self, batch_size=128, momentum=0.85, weight_decay=1e-5, early_stopping_patience=120, max_grad_norm=1.0):
+    def __init__(self, batch_size=256, momentum=0.85, weight_decay=5e-5, early_stopping_patience=120, max_grad_norm=1.0, dropout=0.15):
         self.x_train = None
         self.y_train = None
 
         self.LR = 0.03
-        self.batch_size = batch_size
-        self.momentum = momentum #momentum for the update of the weights
-        self.weight_decay = weight_decay
+        self.batch_size = batch_size  # 256 = smoother val curves, less spike variance
+        self.momentum = momentum
+        self.weight_decay = weight_decay  # moderate L2 + dropout to reduce overfitting
+        self.dropout = dropout  # only applied during training, used to prevent overfitting
         self.early_stopping_patience = early_stopping_patience
         self.max_grad_norm = max_grad_norm
 
@@ -84,6 +85,8 @@ class VowelNN:
 
                 # trajectory: F1,F2,F3 at 10%,20%,...,80% (cols 7–30 → indices 6–29)
                 trajectory = [float(data[i]) for i in range(6, 30)]
+
+                
                 # 31 features: 7 base + 24 trajectory
                 x.append([f1, f2, f3, ratio_f1_f2, ratio_f3_f2, diff_f2_f1, diff_f3_f2] + trajectory)
                 y.append(vowels[vowel])
@@ -95,6 +98,7 @@ class VowelNN:
 
     def split_data(self, x, y, test_frac=0.2, val_frac=0.15, seed=42):
         """Stratified train/val/test split so each vowel is represented in all sets."""
+        #split into 60/20/20
         np.random.seed(seed)
         train_idx, val_idx, test_idx = [], [], []
 
@@ -154,8 +158,8 @@ class VowelNN:
 
 
 
-    def sigmoid(self, epoch, max_epochs, max_lr=0.04, min_lr=0.0005, k=4):
-        """LR schedule: start higher, decay more gently (k=4) so model can refine longer."""
+    def sigmoid(self, epoch, max_epochs, max_lr=0.03, min_lr=0.0005, k=4):
+        """LR schedule: gentler decay (k=4). Slightly lower max_lr reduces val loss spikes."""
         middle = max_epochs / 2
         return min_lr + (max_lr - min_lr) / (1 + np.exp(k * (epoch - middle) / middle))
 
@@ -187,6 +191,7 @@ class VowelNN:
         n = self.x_train.shape[0]
         best_val_loss = np.inf
         epochs_without_improvement = 0
+        best_weights = None  # will store best W1,B1,W2,B2,W3,B3 by val loss
 
         for epoch in range(epochs):
             self.LR = self.sigmoid(epoch, epochs)
@@ -207,16 +212,23 @@ class VowelNN:
                 x = x_shuf[start:end]
                 y = y_shuf[start:end]
 
-                #Forward pass
-                #Hidden layer 1
+                # Forward pass (with dropout during training)
                 weight_sum_1 = np.dot(x, self.W1) + self.B1
                 output_H1_layer = self.relu(weight_sum_1)
+                if self.dropout > 0:
+                    mask1 = (np.random.random(output_H1_layer.shape) >= self.dropout).astype(np.float64)
+                    output_H1_layer = output_H1_layer * mask1 / (1.0 - self.dropout)
+                else:
+                    mask1 = None
 
-                #Hidden layer 2
                 weight_sum_2 = np.dot(output_H1_layer, self.W2) + self.B2
                 output_H2_layer = self.relu(weight_sum_2)
+                if self.dropout > 0:
+                    mask2 = (np.random.random(output_H2_layer.shape) >= self.dropout).astype(np.float64)
+                    output_H2_layer = output_H2_layer * mask2 / (1.0 - self.dropout)
+                else:
+                    mask2 = None
 
-                #Output layer
                 scores = np.dot(output_H2_layer, self.W3) + self.B3
                 probabilities = self.softmax(scores)
 
@@ -235,8 +247,7 @@ class VowelNN:
                 epoch_correct += np.sum(predictions == y)
                 epoch_total += N
 
-                #Backpropagation
-                self.back_propagation(x, y, probabilities, weight_sum_1, output_H1_layer, weight_sum_2, output_H2_layer)
+                self.back_propagation(x, y, probabilities, weight_sum_1, output_H1_layer, weight_sum_2, output_H2_layer, mask1=mask1, mask2=mask2)
 
             #Calculate the average loss and accuracy for the epoch
             train_loss = np.mean(epoch_losses)
@@ -254,6 +265,11 @@ class VowelNN:
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 epochs_without_improvement = 0
+                best_weights = {
+                    "W1": self.W1.copy(), "B1": self.B1.copy(),
+                    "W2": self.W2.copy(), "B2": self.B2.copy(),
+                    "W3": self.W3.copy(), "B3": self.B3.copy(),
+                }
             else:
                 #If the validation loss is not lower than the best validation loss
                 #Increment the number of epochs without improvement
@@ -271,6 +287,16 @@ class VowelNN:
             if epochs_without_improvement >= self.early_stopping_patience:
                 print(f"Early stopping at epoch {epoch} (no val loss improvement for {self.early_stopping_patience} epochs)")
                 break
+
+        # Use the best model by validation loss (not the last epoch) for plots and test
+        if best_weights is not None:
+            self.W1 = best_weights["W1"]
+            self.B1 = best_weights["B1"]
+            self.W2 = best_weights["W2"]
+            self.B2 = best_weights["B2"]
+            self.W3 = best_weights["W3"]
+            self.B3 = best_weights["B3"]
+            print("Restored weights from best validation loss checkpoint.")
 
         # Popup 1: Train loss & accuracy
         plt.figure()
@@ -307,7 +333,7 @@ class VowelNN:
 
 
 
-    def back_propagation(self, x, y, probabilities, weight_sum_1, output_H1_layer, weight_sum_2, output_H2_layer):
+    def back_propagation(self, x, y, probabilities, weight_sum_1, output_H1_layer, weight_sum_2, output_H2_layer, mask1=None, mask2=None):
         N = x.shape[0]
         
         
@@ -323,7 +349,8 @@ class VowelNN:
         dW3 = np.dot(output_H2_layer.T, dScores)
         dB3 = np.sum(dScores, axis=0)
         dOutput_H2_layer = np.dot(dScores, self.W3.T)
-
+        if mask2 is not None:
+            dOutput_H2_layer = dOutput_H2_layer * mask2 / (1.0 - self.dropout)
 
         #Gradient for the weights and biases of the hidden layer 2
         dWeight_sum_2 = dOutput_H2_layer * self.relu_derivative(weight_sum_2)
@@ -333,6 +360,8 @@ class VowelNN:
         dW2 = np.dot(output_H1_layer.T, dWeight_sum_2)
         dB2 = np.sum(dWeight_sum_2, axis=0)
         dOutput_H1_layer = np.dot(dWeight_sum_2, self.W2.T)
+        if mask1 is not None:
+            dOutput_H1_layer = dOutput_H1_layer * mask1 / (1.0 - self.dropout)
         dWeight_sum_1 = dOutput_H1_layer * self.relu_derivative(weight_sum_1)
         dW1 = np.dot(x.T, dWeight_sum_1)
         dB1 = np.sum(dWeight_sum_1, axis=0)
@@ -377,8 +406,8 @@ class VowelNN:
 
 
 
-
-    def forward_single(self, x):
+    #this is used to test the model on a single sample
+    def forward_single(self, x): 
         """Forward pass for a single sample. x: shape (31,) or (1, 31). Returns (x, h1, h2, probs)."""
         x = np.atleast_2d(x) #convert the input to a 2D array
         weight_sum_1 = np.dot(x, self.W1) + self.B1
@@ -399,6 +428,7 @@ class VowelNN:
 
 
 
+    #this is used to calculate the loss and accuracy of the model on the validation set
     def _loss_and_accuracy(self, x, y):
         """Forward pass with ReLU; returns cross-entropy loss and accuracy."""
         weight_sum_1 = np.dot(x, self.W1) + self.B1
